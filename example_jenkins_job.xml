@@ -1,0 +1,171 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <description>Automatyczny job do uruchamiania testów Python przesłanych przez Jenkins Test Agent</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.TextParameterDefinition>
+          <name>TESTS_DATA</name>
+          <description>JSON zawierający dane testów do uruchomienia</description>
+          <defaultValue>[]</defaultValue>
+        </hudson.model.TextParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>RUN_TESTS</name>
+          <description>Czy uruchomić testy</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+
+# Skrypt do uruchamiania testów przekazanych przez Jenkins Test Agent
+
+echo "=== Jenkins Test Agent - Automated Test Execution ==="
+
+if [ "$RUN_TESTS" = "true" ]; then
+    echo "Przygotowywanie środowiska testowego..."
+    
+    # Utworzenie katalogu roboczego
+    mkdir -p test_workspace
+    cd test_workspace
+    
+    # Instalacja pytest jeśli nie jest dostępny
+    python3 -m pip install --user pytest pytest-html pytest-json-report
+    
+    # Parsowanie JSON z testami
+    echo "Rozpakowanie plików testowych..."
+    python3 &lt;&lt; 'EOF'
+import json
+import os
+import sys
+
+try:
+    tests_data = os.environ.get('TESTS_DATA', '[]')
+    tests = json.loads(tests_data)
+    
+    if not tests:
+        print("Brak testów do uruchomienia!")
+        sys.exit(1)
+    
+    print(f"Znaleziono {len(tests)} plików testowych:")
+    
+    for test in tests:
+        file_path = test.get('name', '')
+        content = test.get('content', '')
+        
+        if not file_path or not content:
+            continue
+            
+        # Utworzenie katalogów jeśli potrzebne
+        dir_name = os.path.dirname(file_path)
+        if dir_name:
+            os.makedirs(dir_name, exist_ok=True)
+        
+        # Zapisanie pliku
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        print(f"  - {file_path}")
+        
+    print("Pliki testowe zostały utworzone!")
+    
+except Exception as e:
+    print(f"Błąd parsowania testów: {e}")
+    sys.exit(1)
+EOF
+
+    # Sprawdzenie czy pliki zostały utworzone
+    echo "Zawartość katalogu roboczego:"
+    find . -name "*.py" -type f
+
+    # Uruchomienie testów z raportowaniem
+    echo "Uruchamianie testów..."
+    python3 -m pytest -v \
+        --tb=short \
+        --html=test_report.html \
+        --self-contained-html \
+        --json-report \
+        --json-report-file=test_results.json \
+        . || TEST_EXIT_CODE=$?
+
+    # Wyświetlenie wyników
+    echo "=== WYNIKI TESTÓW ==="
+    
+    if [ -f "test_results.json" ]; then
+        echo "Szczegółowe wyniki:"
+        python3 &lt;&lt; 'EOF'
+import json
+
+try:
+    with open('test_results.json', 'r') as f:
+        results = json.load(f)
+    
+    summary = results.get('summary', {})
+    print(f"Razem testów: {summary.get('total', 0)}")
+    print(f"Przeszło: {summary.get('passed', 0)}")
+    print(f"Nie przeszło: {summary.get('failed', 0)}")
+    print(f"Błędy: {summary.get('error', 0)}")
+    print(f"Pominięte: {summary.get('skipped', 0)}")
+    
+    # Szczegóły niepowodzeń
+    tests = results.get('tests', [])
+    failed_tests = [t for t in tests if t.get('outcome') == 'failed']
+    
+    if failed_tests:
+        print("\n=== NIEPOWODZENIA ===")
+        for test in failed_tests:
+            print(f"Test: {test.get('nodeid', 'Unknown')}")
+            print(f"Błąd: {test.get('call', {}).get('longrepr', 'Brak szczegółów')}")
+            print("-" * 50)
+            
+except Exception as e:
+    print(f"Błąd odczytu wyników: {e}")
+EOF
+    fi
+
+    # Zakończenie z odpowiednim kodem
+    exit ${TEST_EXIT_CODE:-0}
+
+else
+    echo "Parametr RUN_TESTS nie jest ustawiony na true. Job zakończony bez uruchamiania testów."
+    exit 0
+fi</command>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers>
+    <hudson.tasks.ArtifactArchiver>
+      <artifacts>test_workspace/**/*</artifacts>
+      <allowEmptyArchive>true</allowEmptyArchive>
+      <onlyIfSuccessful>false</onlyIfSuccessful>
+      <fingerprint>false</fingerprint>
+      <defaultExcludes>true</defaultExcludes>
+      <caseSensitive>true</caseSensitive>
+    </hudson.tasks.ArtifactArchiver>
+    <htmlpublisher.HtmlPublisher plugin="htmlpublisher@1.25">
+      <reportTargets>
+        <htmlpublisher.HtmlPublisherTarget>
+          <reportName>Test Report</reportName>
+          <reportDir>test_workspace</reportDir>
+          <reportFiles>test_report.html</reportFiles>
+          <alwaysLinkToLastBuild>false</alwaysLinkToLastBuild>
+          <keepAll>true</keepAll>
+          <allowMissing>true</allowMissing>
+          <includes>**/*</includes>
+          <escapeUnderscores>true</escapeUnderscores>
+        </htmlpublisher.HtmlPublisherTarget>
+      </reportTargets>
+    </htmlpublisher.HtmlPublisher>
+  </publishers>
+  <buildWrappers/>
+</project> 
