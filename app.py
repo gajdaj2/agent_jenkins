@@ -2,7 +2,7 @@ import streamlit as st
 import os
 from dotenv import load_dotenv
 from agents.test_agent import TestAgent
-from utils.github_client import GitHubClient
+from utils.gitlab_client import GitLabClient
 from utils.jenkins_client import JenkinsClient
 from utils.ollama_client import OllamaClient
 
@@ -17,7 +17,7 @@ def main():
     )
     
     st.title("🤖 Jenkins Test Agent z Gemma3:7b")
-    st.markdown("Agent AI do zarządzania testami na GitHubie i Jenkinsie")
+    st.markdown("Agent AI do zarządzania testami na GitLabie i Jenkinsie")
     
     # Sidebar z konfiguracją
     st.sidebar.header("⚙️ Konfiguracja")
@@ -27,10 +27,11 @@ def main():
     ollama_host = st.sidebar.text_input("Host Ollama", value="http://localhost:11434")
     model_name = st.sidebar.text_input("Model", value="gemma2:7b")
     
-    # Konfiguracja GitHub
-    st.sidebar.subheader("GitHub")
-    github_token = st.sidebar.text_input("GitHub Token", type="password")
-    repo_url = st.sidebar.text_input("Repository URL")
+    # Konfiguracja GitLab
+    st.sidebar.subheader("GitLab")
+    gitlab_token = st.sidebar.text_input("GitLab Token", type="password")
+    gitlab_url = st.sidebar.text_input("GitLab URL", value="https://gitlab.com")
+    project_id = st.sidebar.text_input("Project ID (lub owner/repo)")
     
     # Konfiguracja Jenkins
     st.sidebar.subheader("Jenkins")
@@ -40,20 +41,21 @@ def main():
     
     # Główna aplikacja
     if st.sidebar.button("🔧 Inicjalizuj Agenta"):
-        if not all([github_token, repo_url, jenkins_url, jenkins_user, jenkins_token]):
+        if not all([gitlab_token, project_id, jenkins_url, jenkins_user, jenkins_token]):
             st.error("Wypełnij wszystkie pola konfiguracji!")
             return
             
         try:
             # Inicializacja klientów
             ollama_client = OllamaClient(ollama_host, model_name)
-            github_client = GitHubClient(github_token)
+            gitlab_client = GitLabClient(gitlab_token, gitlab_url)
             jenkins_client = JenkinsClient(jenkins_url, jenkins_user, jenkins_token)
             
             # Inicializacja agenta
-            agent = TestAgent(ollama_client, github_client, jenkins_client)
+            agent = TestAgent(ollama_client, gitlab_client, jenkins_client)
             
             st.session_state.agent = agent
+            st.session_state.project_id = project_id
             st.success("Agent został pomyślnie zainicjalizowany!")
             
         except Exception as e:
@@ -74,20 +76,19 @@ def show_agent_interface():
     ])
     
     with tab1:
-        st.header("Pobieranie testów z GitHub")
+        st.header("Pobieranie testów z GitLab")
         
         col1, col2 = st.columns(2)
         with col1:
-            repo_owner = st.text_input("Właściciel repo")
-            repo_name = st.text_input("Nazwa repo")
-        with col2:
+            project_id = st.text_input("Project ID", value=st.session_state.get('project_id', ''))
             branch = st.text_input("Branch", value="main")
+        with col2:
             test_path = st.text_input("Ścieżka do testów", value="tests/")
         
         if st.button("📥 Pobierz Testy"):
             with st.spinner("Pobieranie testów..."):
                 try:
-                    tests = agent.fetch_tests_from_github(repo_owner, repo_name, branch, test_path)
+                    tests = agent.fetch_tests_from_gitlab(project_id, branch, test_path)
                     st.session_state.tests = tests
                     st.success(f"Pobrano {len(tests)} plików testowych!")
                     
@@ -102,7 +103,7 @@ def show_agent_interface():
         st.header("Uruchamianie testów")
         
         if 'tests' not in st.session_state:
-            st.warning("Najpierw pobierz testy z GitHub!")
+            st.warning("Najpierw pobierz testy z GitLab!")
             return
         
         col1, col2 = st.columns(2)

@@ -1,10 +1,10 @@
 # Jenkins Test Agent z Gemma3:7b
 
-🤖 Inteligentny agent AI wykorzystujący model Gemma3:7b na Ollama do automatycznego zarządzania testami między GitHubem a Jenkinsem.
+🤖 Inteligentny agent AI wykorzystujący model Gemma3:7b na Ollama do automatycznego zarządzania testami między GitLabem a Jenkinsem.
 
 ## ✨ Funkcje
 
-- 📥 **Pobieranie testów z GitHub** - Automatyczne pobieranie plików testowych z repozytoriów
+- 📥 **Pobieranie testów z GitLab** - Automatyczne pobieranie plików testowych z repozytoriów
 - 🏃 **Uruchamianie testów** - Lokalne i zdalne wykonanie testów na Jenkins
 - 📊 **Analiza logów** - Inteligentna analiza wyników testów używając AI
 - 🔧 **Automatyczne poprawki** - Generowanie i aplikowanie poprawek na podstawie błędów
@@ -23,7 +23,7 @@
    ollama pull gemma2:7b
    ```
 3. **Dostęp do Jenkins** z API token
-4. **GitHub token** z odpowiednimi uprawnieniami
+4. **GitLab token** z odpowiednimi uprawnieniami
 
 ### Instalacja aplikacji
 
@@ -47,12 +47,13 @@
 
 ## 📋 Konfiguracja
 
-### GitHub Token
+### GitLab Token
 
-1. Przejdź do GitHub Settings → Developer settings → Personal access tokens
+1. Przejdź do GitLab Settings → Access Tokens
 2. Utwórz nowy token z uprawnieniami:
-   - `repo` (pełny dostęp do repozytoriów)
-   - `workflow` (dostęp do GitHub Actions)
+   - `api` (pełny dostęp do API)
+   - `read_repository` (dostęp do repozytoriów)
+   - `write_repository` (możliwość modyfikacji)
 
 ### Jenkins API Token
 
@@ -74,12 +75,15 @@ ollama list  # Sprawdź dostępne modele
 
 W panelu bocznym wprowadź:
 - URL i dane dostępowe do Ollama
-- GitHub token i URL repozytorium
+- GitLab token i URL instancji
+- Project ID (np. "owner/project-name" lub ID numeryczne)
 - Dane dostępowe do Jenkins
 
 ### 2. Pobieranie testów
 
-- Wprowadź szczegóły repozytorium (właściciel, nazwa, branch)
+- Wprowadź Project ID (można znaleźć w ustawieniach projektu GitLab)
+- Wybierz branch (domyślnie "main")
+- Ustaw ścieżkę do testów (domyślnie "tests/")
 - Kliknij "Pobierz Testy"
 - Przejrzyj pobrane pliki testowe
 
@@ -108,7 +112,7 @@ jenkins_agent/
 │   └── test_agent.py     # Główna logika agenta
 ├── utils/
 │   ├── ollama_client.py  # Klient Ollama
-│   ├── github_client.py  # Klient GitHub API
+│   ├── gitlab_client.py  # Klient GitLab API
 │   └── jenkins_client.py # Klient Jenkins API
 ├── requirements.txt      # Zależności Python
 ├── .env.example         # Przykład konfiguracji
@@ -183,16 +187,23 @@ ollama serve
 - Sprawdź poprawność URL, nazwy użytkownika i API token
 - Upewnij się, że użytkownik ma uprawnienia do uruchamiania job'ów
 
-### Błędy GitHub API
+### Błędy GitLab API
 - Sprawdź ważność token'a
-- Upewnij się, że token ma odpowiednie uprawnienia
+- Upewnij się, że token ma odpowiednie uprawnienia (api, read_repository, write_repository)
+- Sprawdź czy Project ID jest prawidłowy (znajdziesz go w Settings → General projektu)
+
+### Project ID w GitLab
+GitLab Project ID można znaleźć:
+1. W ustawieniach projektu (Settings → General)
+2. Używając formatu `owner/project-name`
+3. Jako ID numeryczne (np. `12345`)
 
 ## 🤝 Wkład w rozwój
 
 1. Fork repozytorium
 2. Utwórz branch dla nowej funkcji
 3. Wprowadź zmiany i dodaj testy
-4. Utwórz Pull Request
+4. Utwórz Merge Request
 
 ## 📄 Licencja
 
@@ -202,5 +213,5 @@ MIT License - zobacz plik LICENSE dla szczegółów.
 
 W razie problemów:
 1. Sprawdź sekcję rozwiązywania problemów
-2. Otwórz issue na GitHub
+2. Otwórz issue na GitLab
 3. Dołącz logi z błędami i konfigurację (bez tokenów!) 
