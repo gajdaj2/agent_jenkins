@@ -39,6 +39,32 @@ def main():
     jenkins_user = st.sidebar.text_input("Jenkins User")
     jenkins_token = st.sidebar.text_input("Jenkins Token", type="password")
     
+    # Test połączenia Jenkins
+    if jenkins_url and jenkins_user and jenkins_token:
+        if st.sidebar.button("🔍 Testuj połączenie Jenkins"):
+            with st.sidebar.spinner("Testowanie połączenia..."):
+                try:
+                    jenkins_client = JenkinsClient(jenkins_url, jenkins_user, jenkins_token)
+                    connection_test = jenkins_client.test_connection()
+                    
+                    if connection_test['connected']:
+                        st.sidebar.success(connection_test['message'])
+                        
+                        # Pokaż dostępne job'y
+                        try:
+                            jobs = jenkins_client.get_all_jobs()
+                            if jobs:
+                                st.sidebar.info(f"Znaleziono {len(jobs)} job'ów")
+                                job_names = [job['name'] for job in jobs[:5]]
+                                st.sidebar.write("Przykładowe job'y:", ", ".join(job_names))
+                        except Exception as e:
+                            st.sidebar.warning(f"Nie udało się pobrać listy job'ów: {e}")
+                    else:
+                        st.sidebar.error(connection_test['message'])
+                        
+                except Exception as e:
+                    st.sidebar.error(f"Błąd testowania połączenia: {e}")
+    
     # Główna aplikacja
     if st.sidebar.button("🔧 Inicjalizuj Agenta"):
         if not all([gitlab_token, project_id, jenkins_url, jenkins_user, jenkins_token]):
@@ -51,12 +77,20 @@ def main():
             gitlab_client = GitLabClient(gitlab_token, gitlab_url)
             jenkins_client = JenkinsClient(jenkins_url, jenkins_user, jenkins_token)
             
+            # Test połączenia Jenkins
+            connection_test = jenkins_client.test_connection()
+            if not connection_test['connected']:
+                st.error(f"Nie udało się połączyć z Jenkins: {connection_test['message']}")
+                return
+            
             # Inicializacja agenta
             agent = TestAgent(ollama_client, gitlab_client, jenkins_client)
             
             st.session_state.agent = agent
             st.session_state.project_id = project_id
+            st.session_state.jenkins_client = jenkins_client
             st.success("Agent został pomyślnie zainicjalizowany!")
+            st.info(connection_test['message'])
             
         except Exception as e:
             st.error(f"Błąd inicjalizacji: {str(e)}")
@@ -66,14 +100,44 @@ def main():
 
 def show_agent_interface():
     agent = st.session_state.agent
+    jenkins_client = st.session_state.get('jenkins_client')
     
     # Tabs dla różnych funkcji
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📥 Pobierz Testy", 
         "🏃 Uruchom Testy", 
         "📊 Analiza Logów", 
-        "🔧 Popraw Testy"
+        "🔧 Popraw Testy",
+        "🔍 Jenkins Jobs"
     ])
+    
+    with tab5:
+        st.header("Jenkins Jobs")
+        
+        if jenkins_client:
+            if st.button("🔄 Odśwież listę job'ów"):
+                try:
+                    jobs = jenkins_client.get_all_jobs()
+                    st.session_state.jenkins_jobs = jobs
+                    st.success(f"Znaleziono {len(jobs)} job'ów")
+                except Exception as e:
+                    st.error(f"Błąd pobierania job'ów: {e}")
+            
+            if 'jenkins_jobs' in st.session_state:
+                jobs = st.session_state.jenkins_jobs
+                
+                st.subheader(f"Dostępne job'y ({len(jobs)})")
+                for job in jobs:
+                    with st.expander(f"📋 {job['name']}"):
+                        st.write(f"**URL:** {job.get('url', 'N/A')}")
+                        st.write(f"**Kolor:** {job.get('color', 'N/A')}")
+                        
+                        if st.button(f"ℹ️ Szczegóły", key=f"info_{job['name']}"):
+                            try:
+                                job_info = jenkins_client.get_job_info(job['name'])
+                                st.json(job_info)
+                            except Exception as e:
+                                st.error(f"Błąd pobierania szczegółów: {e}")
     
     with tab1:
         st.header("Pobieranie testów z GitLab")
@@ -128,7 +192,14 @@ def show_agent_interface():
         
         with col2:
             st.subheader("☁️ Uruchom na Jenkins")
-            job_name = st.text_input("Nazwa job'a Jenkins")
+            
+            # Dropdown z dostępnymi job'ami
+            if 'jenkins_jobs' in st.session_state:
+                job_names = [job['name'] for job in st.session_state.jenkins_jobs]
+                selected_job = st.selectbox("Wybierz job", options=job_names)
+                job_name = selected_job
+            else:
+                job_name = st.text_input("Nazwa job'a Jenkins")
             
             if st.button("▶️ Uruchom testy na Jenkins"):
                 if not job_name:
@@ -142,6 +213,10 @@ def show_agent_interface():
                         
                         st.success(f"Job uruchomiony! Build #{result['build_number']}")
                         st.info(f"Status: {result['status']}")
+                        
+                        if result['logs']:
+                            with st.expander("📄 Logi Jenkins"):
+                                st.code(result['logs'], language='bash')
                         
                     except Exception as e:
                         st.error(f"Błąd uruchamiania na Jenkins: {str(e)}")
